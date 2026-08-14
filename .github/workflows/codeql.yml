@@ -18,7 +18,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@d6317709a54fd87078d323eeb0e48ec331c8e621
+        uses: github/codeql-action/init@f3712979fa5f215279b101dd0a2e3bdfb4353324
         with:
           languages: javascript-typescript
       - name: Set up Node.js
