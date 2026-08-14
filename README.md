@@ -21,7 +21,7 @@ The npm package has not been published yet. Until the first npm release, build f
 ```sh
 git clone https://github.com/boxzeemon-beep/agent-risk-linter.git
 cd agent-risk-linter
-git checkout 1bb4e3b5d0353feec9a11d5b7a998e4aab054d8f
+git checkout 8ebecd44b9a9f5a1131cbec19aa40f461d66fb72
 npm ci --ignore-scripts
 npm run build
 node dist/src/cli.js scan .
@@ -148,7 +148,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - id: agent-risk
-        uses: boxzeemon-beep/agent-risk-linter@1bb4e3b5d0353feec9a11d5b7a998e4aab054d8f
+        uses: boxzeemon-beep/agent-risk-linter@8ebecd44b9a9f5a1131cbec19aa40f461d66fb72
         with:
           fail-on: high
       - if: always()
