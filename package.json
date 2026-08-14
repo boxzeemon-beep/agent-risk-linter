@@ -1,0 +1,63 @@
+{
+  "name": "agent-risk-linter",
+  "version": "0.1.0",
+  "description": "Offline-first security linter for agent skills, instructions, MCP configs, scripts, and CI workflows.",
+  "type": "module",
+  "bin": {
+    "agent-risk-linter": "dist/src/cli.js",
+    "arl": "dist/src/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "types": "dist/src/index.d.ts",
+  "files": [
+    "dist/src/",
+    "schema/",
+    ".agents/skills/scan-agent-risk/",
+    "action.yml",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "check": "npm run test && npm run self-scan",
+    "self-scan": "node dist/src/cli.js scan . --fail-on high",
+    "prepack": "npm run check"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/boxzeemon-beep/agent-risk-linter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/boxzeemon-beep/agent-risk-linter/issues"
+  },
+  "homepage": "https://github.com/boxzeemon-beep/agent-risk-linter#readme",
+  "keywords": [
+    "agent-security",
+    "codex",
+    "mcp",
+    "prompt-injection",
+    "security-linter",
+    "skills",
+    "supply-chain"
+  ],
+  "author": "boxzeemon-beep",
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2"
+  }
+}

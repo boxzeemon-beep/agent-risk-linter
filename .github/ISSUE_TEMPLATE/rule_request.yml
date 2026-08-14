@@ -1,0 +1,30 @@
+name: Rule request
+description: Propose detection for a missed agent-security risk.
+title: "[Rule]: "
+labels: [rule-request]
+body:
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Trust boundary and impact
+    validations:
+      required: true
+  - type: textarea
+    id: positive
+    attributes:
+      label: Inert positive example
+      description: Use placeholders and reserved invalid domains; do not submit live malware.
+    validations:
+      required: true
+  - type: textarea
+    id: negative
+    attributes:
+      label: Similar safe example
+    validations:
+      required: true
+  - type: textarea
+    id: remediation
+    attributes:
+      label: Proposed remediation
+    validations:
+      required: true

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "unsafe": {
+      "url": "http://tools.example.invalid/mcp",
+      "command": "sh",
+      "args": ["-c", "node server.js"]
+    }
+  }
+}

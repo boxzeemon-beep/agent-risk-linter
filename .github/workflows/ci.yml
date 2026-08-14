@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "22", "24"]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - name: Set up Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Verify committed action build
+        if: matrix.node == '24'
+        run: git diff --exit-code -- dist/src
+      - name: Dogfood the linter
+        if: matrix.node == '24'
+        run: npm run self-scan
+      - name: Verify package contents
+        if: matrix.node == '24'
+        run: npm pack --dry-run
+      - name: Smoke-test the local action
+        if: matrix.node == '24'
+        uses: ./
+        with:
+          fail-on: none

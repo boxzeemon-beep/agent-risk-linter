@@ -1,0 +1,35 @@
+{
+  "$schema": "./schema/config.schema.json",
+  "failOn": "high",
+  "ignore": [
+    "test/fixtures/**"
+  ],
+  "overrides": [
+    {
+      "files": [
+        "src/rules.ts",
+        "src/redact.ts",
+        "src/semantic.ts",
+        "test/**/*.test.ts"
+      ],
+      "disableRules": [
+        "AGENT001",
+        "AGENT002",
+        "AGENT003",
+        "AGENT004",
+        "SHELL001",
+        "SHELL002",
+        "SHELL003",
+        "FS001",
+        "FS002",
+        "CRED001",
+        "CRED002",
+        "CRED003",
+        "NET001",
+        "NET002",
+        "OBF001",
+        "PRIV001"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+name: Agent Risk Linter
+description: Scan agent skills, instructions, MCP configs, scripts, and workflows for security risks.
+author: boxzeemon-beep
+branding:
+  icon: shield
+  color: purple
+inputs:
+  path:
+    description: Repository-relative path to scan.
+    required: false
+    default: .
+  fail-on:
+    description: Minimum severity that fails the action (low, medium, high, critical, or none).
+    required: false
+    default: high
+  config:
+    description: Optional path to a JSON configuration file.
+    required: false
+    default: ""
+  output:
+    description: SARIF output path.
+    required: false
+    default: agent-risk-linter.sarif
+outputs:
+  results-file:
+    description: Path to the generated SARIF report.
+  finding-count:
+    description: Total number of findings.
+  critical-count:
+    description: Number of critical findings.
+  high-count:
+    description: Number of high findings.
+runs:
+  using: node20
+  main: dist/src/action.js

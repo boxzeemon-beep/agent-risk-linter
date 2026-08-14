@@ -1,0 +1,13 @@
+node_modules/
+dist/test/
+dist/package.json
+coverage/
+*.log
+*.tgz
+.env
+.env.*
+!.env.example
+agent-risk-linter.sarif
+semantic-preview*.json
+.DS_Store
+Thumbs.db
