@@ -16,6 +16,15 @@ test("redaction removes credential values and private keys", () => {
   assert.match(redacted, /REDACTED/);
 });
 
+test("private-key redaction handles adversarial and unterminated markers without backtracking", () => {
+  const repeatedHeaders = "-----BEGIN PRIVATE KEY-----\n".repeat(20_000);
+  const redacted = redactText(`${repeatedHeaders}secret material`);
+  assert.equal(redacted, "[REDACTED PRIVATE KEY]");
+
+  const complete = redactText("before\n-----BEGIN RSA PRIVATE KEY-----\nsecret\n-----END RSA PRIVATE KEY-----\nafter");
+  assert.equal(complete, "before\n[REDACTED PRIVATE KEY]\nafter");
+});
+
 test("semantic preview is redacted, bounded, and limited to relevant file kinds", async () => {
   const execution = await scanProject({ root: unsafeRoot, useConfig: false });
   const payload = prepareSemanticPayload(execution, 1_500);

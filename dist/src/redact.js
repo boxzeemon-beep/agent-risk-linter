@@ -15,9 +15,25 @@ function looksLikePlaceholder(value) {
     const lower = value.toLowerCase();
     return value.startsWith("$") || value.startsWith("{{") || PLACEHOLDER_MARKERS.some((marker) => lower.includes(marker));
 }
+function redactPrivateKeys(input) {
+    const headerPattern = /-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----/g;
+    const parts = [];
+    let cursor = 0;
+    for (let match = headerPattern.exec(input); match; match = headerPattern.exec(input)) {
+        const header = match[0];
+        const endMarker = header.replace("BEGIN", "END");
+        const endIndex = input.indexOf(endMarker, match.index + header.length);
+        parts.push(input.slice(cursor, match.index), "[REDACTED PRIVATE KEY]");
+        if (endIndex === -1)
+            return parts.join("");
+        cursor = endIndex + endMarker.length;
+        headerPattern.lastIndex = cursor;
+    }
+    parts.push(input.slice(cursor));
+    return parts.join("");
+}
 export function redactText(input) {
-    let output = input;
-    output = output.replace(/-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----[\s\S]*?-----END(?: [A-Z0-9]+)? PRIVATE KEY-----/g, "[REDACTED PRIVATE KEY]");
+    let output = redactPrivateKeys(input);
     output = output.replace(/(Authorization\s*:\s*Bearer\s+)[^\s"']+/gi, "$1[REDACTED]");
     output = output.replace(/\b(sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,})\b/g, "[REDACTED TOKEN]");
     output = output.replace(/((?:api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)["']?\s*[:=]\s*["']?)([^"'\s,;#]{8,})(["']?)/gi, (match, prefix, value, suffix) => {
