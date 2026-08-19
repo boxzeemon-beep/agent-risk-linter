@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -18,6 +18,54 @@ test("unsafe skill exposes agent, shell, filesystem, network, MCP, supply-chain,
   const ids = new Set(execution.result.findings.map((finding) => finding.ruleId));
   for (const expected of ["AGENT001", "AGENT002", "AGENT003", "SHELL001", "FS001", "CRED002", "NET001", "PRIV001", "MCP001", "MCP002", "SC001", "SC002", "SC003", "CI001", "CI002", "CI003"]) {
     assert.ok(ids.has(expected), `expected ${expected}; received ${[...ids].join(", ")}`);
+  }
+});
+
+test("Codex MCP tool hooks are flagged without executing configured tools", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "agent-risk-linter-hooks-"));
+  try {
+    const codexDirectory = path.join(directory, ".codex");
+    await mkdir(codexDirectory);
+    await writeFile(
+      path.join(codexDirectory, "hooks.json"),
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: "Bash",
+              hooks: [
+                {
+                  type: "mcp_tool",
+                  server: "security",
+                  tool: "scan",
+                  input: { command: "${tool_input.command}" },
+                },
+                {
+                  type: "command",
+                  command: "node .codex/hooks/reviewed-audit.js",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(codexDirectory, "config.toml"),
+      "[[hooks.PostToolUse.hooks]]\ntype = 'mcp_tool'\nserver = 'audit'\ntool = 'record'\n",
+      "utf8",
+    );
+
+    const execution = await scanProject({ root: directory, useConfig: false });
+    const findings = execution.result.findings.filter((finding) => finding.ruleId === "MCP003");
+    assert.deepEqual(
+      findings.map((finding) => finding.file).sort(),
+      [".codex/config.toml", ".codex/hooks.json"],
+    );
+    assert.equal(execution.files.find((file) => file.relativePath === ".codex/hooks.json")?.kind, "config");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

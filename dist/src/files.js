@@ -85,7 +85,7 @@ export function classifyFile(relativePath) {
         base === "manifest.json") {
         return "manifest";
     }
-    if (base.includes("mcp") || base === "openai.yaml" || extension === ".toml" || extension === ".ini" || extension === ".conf") {
+    if (base === "hooks.json" || base.includes("mcp") || base === "openai.yaml" || extension === ".toml" || extension === ".ini" || extension === ".conf") {
         return "config";
     }
     if (SCRIPT_EXTENSIONS.has(extension) || SPECIAL_TEXT_NAMES.has(base))

@@ -442,6 +442,18 @@ export const RULES: readonly Rule[] = [
     },
     [/"command"\s*:\s*"(?:sh|bash|zsh|cmd|powershell|pwsh)"[\s\S]{0,260}"(?:-c|\/c|Command)"/gi],
   ),
+  patternRule(
+    {
+      id: "MCP003",
+      title: "Codex lifecycle hook invokes an MCP tool",
+      description: "An MCP tool hook can run automatically during the Codex lifecycle and can template prompt or tool-event data into a tool call that may access files, networks, credentials, or code execution.",
+      remediation: "Review the exact event, matcher, server, tool, and input template. Remove unnecessary hooks, restrict MCP permissions and credentials, and avoid forwarding sensitive or untrusted event fields.",
+      severity: "medium",
+      category: "mcp-security",
+      appliesTo: ["config", "manifest"],
+    },
+    [/"type"\s*:\s*"mcp_tool"/gi, /^\s*type\s*=\s*["']mcp_tool["']\s*(?:#.*)?$/gim],
+  ),
   skillMetadataRule(),
 ];
 

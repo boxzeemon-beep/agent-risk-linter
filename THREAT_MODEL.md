@@ -14,7 +14,7 @@ Agent Risk Linter should let a maintainer inspect untrusted agent instruction pa
 
 ## Adversaries and inputs
 
-- A contributor who submits a malicious Skill, `AGENTS.md`, MCP configuration, script, workflow, dependency, or rule change.
+- A contributor who submits a malicious Skill, `AGENTS.md`, Codex lifecycle hook, MCP configuration, script, workflow, dependency, or rule change.
 - A compromised package, action, release artifact, or upstream repository.
 - Prompt injection embedded in issues, comments, webpages, tool output, or documentation.
 - A local attacker who can replace configuration, build output, or environment variables before scanning.

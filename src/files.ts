@@ -112,7 +112,7 @@ export function classifyFile(relativePath: string): FileKind {
     return "manifest";
   }
 
-  if (base.includes("mcp") || base === "openai.yaml" || extension === ".toml" || extension === ".ini" || extension === ".conf") {
+  if (base === "hooks.json" || base.includes("mcp") || base === "openai.yaml" || extension === ".toml" || extension === ".ini" || extension === ".conf") {
     return "config";
   }
 
