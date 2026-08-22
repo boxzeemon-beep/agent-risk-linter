@@ -43,6 +43,7 @@ The normal path ends at local output and performs no network request. The option
 - Binary, size, and file-count limits.
 - Common dependency/build directories excluded.
 - Secret redaction before every output channel and API payload.
+- Detection and output redaction for static credential-bearing MCP HTTP headers.
 - Structured semantic output with file allowlisting and line clamping.
 - Static-only GitHub Action, so untrusted PR scanning does not need an API secret.
 - Centralized, visible rule suppressions.

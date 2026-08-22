@@ -69,6 +69,67 @@ test("Codex MCP tool hooks are flagged without executing configured tools", asyn
   }
 });
 
+test("static MCP credential headers are flagged and redacted without flagging environment-backed headers", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "agent-risk-linter-mcp-headers-"));
+  const authorizationSecret = "unit-test-authorization-value-123456";
+  const cookieSecret = "unit-test-cookie-value-123456";
+  const proxySecret = "dXNlcjpwYXNzd29yZA==";
+  const dottedSecret = "unit-test-dotted-token-123456";
+  try {
+    const codexDirectory = path.join(directory, ".codex");
+    await mkdir(codexDirectory);
+    await writeFile(
+      path.join(codexDirectory, "config.toml"),
+      [
+        "[mcp_servers.private]",
+        'url = "https://mcp.example.invalid/mcp"',
+        `http_headers = { Authorization = "Bearer ${authorizationSecret}", "X-Region" = "us-east-1" }`,
+        'env_http_headers = { Authorization = "MCP_AUTH_TOKEN" }',
+        "",
+        "[mcp_servers.cookie.http_headers]",
+        `Cookie = "session=${cookieSecret}"`,
+        "",
+        "[mcp_servers.placeholder]",
+        'http_headers = { Authorization = "Bearer ${MCP_TOKEN}" }',
+        "",
+        "[mcp_servers.dotted]",
+        `http_headers."X-Auth-Token" = "${dottedSecret}"`,
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(
+      path.join(directory, "mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          private: {
+            url: "https://mcp.example.invalid/mcp",
+            http_headers: { "Proxy-Authorization": `Basic ${proxySecret}`, "X-Region": "us-east-1" },
+            env_http_headers: { Authorization: "MCP_PROXY_TOKEN" },
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const execution = await scanProject({ root: directory, useConfig: false });
+    const findings = execution.result.findings.filter((finding) => finding.ruleId === "MCP004");
+    assert.equal(findings.length, 4, findings.map((finding) => `${finding.file}:${finding.line}:${finding.description}`).join("\n"));
+    assert.deepEqual(
+      findings.map((finding) => finding.file).sort(),
+      [".codex/config.toml", ".codex/config.toml", ".codex/config.toml", "mcp.json"],
+    );
+    assert.match(findings.map((finding) => finding.description).join("\n"), /Authorization/);
+    assert.match(findings.map((finding) => finding.description).join("\n"), /Cookie/);
+    assert.match(findings.map((finding) => finding.description).join("\n"), /Proxy-Authorization/);
+    assert.match(findings.map((finding) => finding.description).join("\n"), /X-Auth-Token/);
+    for (const secret of [authorizationSecret, cookieSecret, proxySecret, dottedSecret]) {
+      assert.ok(!JSON.stringify(execution.result).includes(secret));
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("single files can be scanned", async () => {
   const execution = await scanProject({ root: fixture("unsafe-skill", "SKILL.md"), useConfig: false });
   assert.equal(execution.result.filesScanned, 1);

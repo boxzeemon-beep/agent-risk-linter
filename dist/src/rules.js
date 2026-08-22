@@ -1,6 +1,8 @@
 import path from "node:path";
 const ALL_TEXT_KINDS = ["instruction", "script", "manifest", "workflow", "config", "document"];
 const EXECUTABLE_KINDS = ["instruction", "script", "workflow", "config", "document"];
+const CREDENTIAL_PLACEHOLDERS = /(?:example|placeholder|redacted|changeme|dummy|sample|your[_-]|x{4,}|\$\{|\{\{|process\.env|<[^>]*(?:token|secret|key)[^>]*>)/i;
+const SENSITIVE_HTTP_HEADERS = new Set(["authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key", "api-key", "x-auth-token"]);
 function cloneGlobal(pattern) {
     const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
     return new RegExp(pattern.source, flags);
@@ -37,6 +39,110 @@ function parsePackageJson(context) {
 function findKey(content, key) {
     const quoted = content.indexOf(`"${key}"`);
     return quoted >= 0 ? quoted : 0;
+}
+function isCredentialPlaceholder(value) {
+    const normalized = value.trim();
+    return !normalized || CREDENTIAL_PLACEHOLDERS.test(normalized) || /^(?:Bearer\s+)?(?:token|secret|password)$/i.test(normalized);
+}
+function findClosingBrace(content, openIndex) {
+    let depth = 0;
+    let quote;
+    let escaped = false;
+    for (let index = openIndex; index < content.length; index += 1) {
+        const character = content[index];
+        if (quote) {
+            if (escaped) {
+                escaped = false;
+            }
+            else if (character === "\\" && quote === '"') {
+                escaped = true;
+            }
+            else if (character === quote) {
+                quote = undefined;
+            }
+            continue;
+        }
+        if (character === '"' || character === "'") {
+            quote = character;
+        }
+        else if (character === "{") {
+            depth += 1;
+        }
+        else if (character === "}") {
+            depth -= 1;
+            if (depth === 0)
+                return index;
+        }
+    }
+    return undefined;
+}
+function sensitiveHeaderAssignments(content, offset = 0) {
+    const matches = [];
+    const assignment = /(?:^|[,\r\n])\s*["']?([A-Za-z0-9_-]+)["']?\s*[:=]\s*(["'])([^\r\n]*?)\2/gim;
+    let match;
+    while ((match = assignment.exec(content)) !== null) {
+        const header = match[1] ?? "";
+        const value = match[3] ?? "";
+        if (!SENSITIVE_HTTP_HEADERS.has(header.toLowerCase()) || isCredentialPlaceholder(value))
+            continue;
+        const headerOffset = match[0].indexOf(header);
+        matches.push({ index: offset + match.index + Math.max(headerOffset, 0), length: header.length, message: `Static credential header: ${header}` });
+    }
+    return matches;
+}
+function mcpStaticCredentialHeaderRule() {
+    return {
+        id: "MCP004",
+        title: "MCP HTTP credential is stored in a static header",
+        description: "A reusable credential in MCP http_headers can leak through repository history or reports, and a client that follows a cross-origin redirect could disclose it to another server.",
+        remediation: "Revoke any committed value. Prefer OAuth, bearer_token_env_var, or env_http_headers, and use an MCP client that restricts redirects to the configured origin.",
+        severity: "high",
+        category: "mcp-security",
+        appliesTo: ["config", "manifest"],
+        detect({ file }) {
+            const matches = [];
+            const inlineMap = /(?:^|[,{]\s*)["']?http_headers["']?\s*[:=]\s*\{/gim;
+            let mapMatch;
+            while ((mapMatch = inlineMap.exec(file.content)) !== null) {
+                const openIndex = mapMatch.index + mapMatch[0].lastIndexOf("{");
+                const closeIndex = findClosingBrace(file.content, openIndex);
+                if (closeIndex === undefined)
+                    break;
+                matches.push(...sensitiveHeaderAssignments(file.content.slice(openIndex + 1, closeIndex), openIndex + 1));
+                inlineMap.lastIndex = closeIndex + 1;
+            }
+            const tablePattern = /^\s*\[([^\]\r\n]+)\]\s*(?:#.*)?$/gim;
+            const tables = [];
+            let tableMatch;
+            while ((tableMatch = tablePattern.exec(file.content)) !== null) {
+                tables.push({ name: (tableMatch[1] ?? "").trim().toLowerCase(), start: tableMatch.index, contentStart: tablePattern.lastIndex });
+            }
+            for (let index = 0; index < tables.length; index += 1) {
+                const table = tables[index];
+                if (!table || !/(?:^|\.)http_headers$/.test(table.name))
+                    continue;
+                const end = tables[index + 1]?.start ?? file.content.length;
+                matches.push(...sensitiveHeaderAssignments(file.content.slice(table.contentStart, end), table.contentStart));
+            }
+            const dottedHeader = /^\s*["']?http_headers["']?\.["']?([A-Za-z0-9_-]+)["']?\s*=\s*(["'])([^\r\n]*?)\2/gim;
+            let dottedMatch;
+            while ((dottedMatch = dottedHeader.exec(file.content)) !== null) {
+                const header = dottedMatch[1] ?? "";
+                const value = dottedMatch[3] ?? "";
+                if (!SENSITIVE_HTTP_HEADERS.has(header.toLowerCase()) || isCredentialPlaceholder(value))
+                    continue;
+                const headerOffset = dottedMatch[0].indexOf(header);
+                matches.push({ index: dottedMatch.index + Math.max(headerOffset, 0), length: header.length, message: `Static credential header: ${header}` });
+            }
+            const seen = new Set();
+            return matches.filter((match) => {
+                if (seen.has(match.index))
+                    return false;
+                seen.add(match.index);
+                return true;
+            });
+        },
+    };
 }
 function packageInstallHookRule() {
     return {
@@ -388,6 +494,7 @@ export const RULES = [
         category: "mcp-security",
         appliesTo: ["config", "manifest"],
     }, [/"type"\s*:\s*"mcp_tool"/gi, /^\s*type\s*=\s*["']mcp_tool["']\s*(?:#.*)?$/gim]),
+    mcpStaticCredentialHeaderRule(),
     skillMetadataRule(),
 ];
 export function getRule(ruleId) {

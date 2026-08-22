@@ -14,7 +14,23 @@ const PLACEHOLDER_MARKERS = [
 
 function looksLikePlaceholder(value: string): boolean {
   const lower = value.toLowerCase();
-  return value.startsWith("$") || value.startsWith("{{") || PLACEHOLDER_MARKERS.some((marker) => lower.includes(marker));
+  return value.includes("${") || value.includes("{{") || PLACEHOLDER_MARKERS.some((marker) => lower.includes(marker));
+}
+
+function redactSensitiveHeaderAssignments(input: string): string {
+  const quoted = /((?:authorization|proxy-authorization|cookie|set-cookie|x-api-key|api-key|x-auth-token)["']?\s*[:=]\s*)(["'])([^\r\n]*?)\2/gi;
+  let output = input.replace(quoted, (match, prefix: string, quote: string, value: string) => {
+    if (looksLikePlaceholder(value)) return match;
+    return `${prefix}${quote}[REDACTED]${quote}`;
+  });
+  output = output.replace(
+    /((?:cookie|set-cookie|x-api-key|api-key|x-auth-token)["']?\s*[:=]\s*)(?!["'])([^\s,;#}\]]+)/gi,
+    (match, prefix: string, value: string) => {
+      if (looksLikePlaceholder(value)) return match;
+      return `${prefix}[REDACTED]`;
+    },
+  );
+  return output;
 }
 
 function redactPrivateKeys(input: string): string {
@@ -40,7 +56,8 @@ function redactPrivateKeys(input: string): string {
 
 export function redactText(input: string): string {
   let output = redactPrivateKeys(input);
-  output = output.replace(/(Authorization\s*:\s*Bearer\s+)[^\s"']+/gi, "$1[REDACTED]");
+  output = output.replace(/((?:Proxy-)?Authorization\s*:\s*(?:Bearer|Basic)\s+)[^\s"']+/gi, "$1[REDACTED]");
+  output = redactSensitiveHeaderAssignments(output);
   output = output.replace(/\b(sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,})\b/g, "[REDACTED TOKEN]");
   output = output.replace(
     /((?:api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)["']?\s*[:=]\s*["']?)([^"'\s,;#]{8,})(["']?)/gi,
