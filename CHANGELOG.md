@@ -5,7 +5,7 @@ All notable changes are documented here. The project follows Semantic Versioning
 ## 0.1.0 - Unreleased
 
 - Add offline scanning for agent instructions, scripts, MCP configuration, package manifests, and GitHub Actions.
-- Add 28 deterministic rules across prompt injection, authorization, command execution, filesystem, credentials, network egress, supply chain, CI, MCP, obfuscation, and Skill metadata, including detection of Codex lifecycle hooks and static MCP credential headers.
+- Add 29 deterministic rules across prompt injection, authorization, command execution, filesystem, credentials, network egress, supply chain, CI, MCP, WebMCP, obfuscation, and Skill metadata, including detection of Codex lifecycle hooks, static MCP credential headers, and agent-callable site-tool registrations.
 - Add text, JSON, and SARIF output with credential redaction.
 - Replace private-key redaction backtracking with a linear-time scan and adversarial regression coverage.
 - Add a zero-runtime-dependency CLI and JavaScript GitHub Action.

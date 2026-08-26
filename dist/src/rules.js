@@ -495,6 +495,15 @@ export const RULES = [
         appliesTo: ["config", "manifest"],
     }, [/"type"\s*:\s*"mcp_tool"/gi, /^\s*type\s*=\s*["']mcp_tool["']\s*(?:#.*)?$/gim]),
     mcpStaticCredentialHeaderRule(),
+    patternRule({
+        id: "WEB001",
+        title: "Website registers an agent-callable WebMCP tool",
+        description: "WebMCP exposes page capabilities to agents in the live signed-in session. Tool names, annotations, and results are untrusted and do not prove that a handler is read-only.",
+        remediation: "Review the handler and called application logic. Keep input schemas narrow, describe side effects accurately, enforce existing authentication, authorization, and input validation, and return only data needed to verify the action.",
+        severity: "medium",
+        category: "webmcp-security",
+        appliesTo: ["script"],
+    }, [/\bdocument\s*\.\s*modelContext\s*(?:\?\.\s*|\.\s*)registerTool\s*\(/gi]),
     skillMetadataRule(),
 ];
 export function getRule(ruleId) {

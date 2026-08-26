@@ -14,7 +14,7 @@ Agent Risk Linter should let a maintainer inspect untrusted agent instruction pa
 
 ## Adversaries and inputs
 
-- A contributor who submits a malicious Skill, `AGENTS.md`, Codex lifecycle hook, MCP configuration, script, workflow, dependency, or rule change.
+- A contributor who submits a malicious Skill, `AGENTS.md`, Codex lifecycle hook, MCP configuration, WebMCP site-tool registration, script, workflow, dependency, or rule change.
 - A compromised package, action, release artifact, or upstream repository.
 - Prompt injection embedded in issues, comments, webpages, tool output, or documentation.
 - A local attacker who can replace configuration, build output, or environment variables before scanning.
@@ -44,6 +44,7 @@ The normal path ends at local output and performs no network request. The option
 - Common dependency/build directories excluded.
 - Secret redaction before every output channel and API payload.
 - Detection and output redaction for static credential-bearing MCP HTTP headers.
+- Review-oriented detection for WebMCP tools that expose application capabilities to agents in a live signed-in page session.
 - Structured semantic output with file allowlisting and line clamping.
 - Static-only GitHub Action, so untrusted PR scanning does not need an API secret.
 - Centralized, visible rule suppressions.

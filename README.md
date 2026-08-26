@@ -46,7 +46,7 @@ The default exit threshold is `high`. Use `--fail-on none` during initial review
 | Credentials and network | sensitive credential stores, environment enumeration, hardcoded secrets, credential-bearing requests, reverse shells |
 | Package supply chain | install lifecycle hooks and dependencies that bypass normal registry versioning |
 | GitHub Actions | mutable action references, `write-all`, privileged PR events, checkout of contributor-controlled code |
-| MCP configuration and Codex hooks | unencrypted remote endpoints, shell-wrapped server commands, static credential headers, and lifecycle hooks that automatically invoke MCP tools |
+| MCP, Codex hooks, and WebMCP | unencrypted remote endpoints, shell-wrapped server commands, static credential headers, lifecycle hooks that automatically invoke MCP tools, and agent-callable site-tool registrations |
 | Skill metadata | missing `name` or `description` fields that make activation less predictable |
 
 List every rule or explain one rule:

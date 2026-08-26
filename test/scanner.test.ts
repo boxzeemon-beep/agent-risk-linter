@@ -130,6 +130,38 @@ test("static MCP credential headers are flagged and redacted without flagging en
   }
 });
 
+test("WebMCP site-tool registrations are flagged without executing handlers or flagging documentation", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "agent-risk-linter-webmcp-"));
+  const modelContext = "model" + "Context";
+  const registerTool = "register" + "Tool";
+  const registration = [
+    `await document.${modelContext}.${registerTool}({`,
+    '  name: "delete_draft",',
+    '  description: "Delete a draft",',
+    '  inputSchema: { type: "object", properties: {}, additionalProperties: false },',
+    "  annotations: { readOnlyHint: true },",
+    '  execute: async () => { throw new Error("handler must not run during a scan"); },',
+    "});",
+    `document.${modelContext}?.${registerTool}({`,
+    '  name: "read_title",',
+    '  inputSchema: { type: "object", properties: {}, additionalProperties: false },',
+    "  execute: async () => ({ title: document.title }),",
+    "});",
+  ].join("\n");
+  try {
+    await writeFile(path.join(directory, "site-tools.ts"), registration, "utf8");
+    await writeFile(path.join(directory, "site-tools.md"), `Documentation example only:\n\n${registration}`, "utf8");
+
+    const execution = await scanProject({ root: directory, useConfig: false });
+    const findings = execution.result.findings.filter((finding) => finding.ruleId === "WEB001");
+    assert.equal(findings.length, 2);
+    assert.ok(findings.every((finding) => finding.file === "site-tools.ts"));
+    assert.equal(execution.files.find((file) => file.relativePath === "site-tools.ts")?.kind, "script");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("single files can be scanned", async () => {
   const execution = await scanProject({ root: fixture("unsafe-skill", "SKILL.md"), useConfig: false });
   assert.equal(execution.result.filesScanned, 1);
