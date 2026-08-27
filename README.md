@@ -16,6 +16,8 @@ Agent Risk Linter makes those behaviors reviewable before installation or merge.
 
 ## Quick start
 
+Agent Risk Linter requires Node.js 22 or newer. Node.js 22 and 24 are the supported LTS baselines; CI also tests the current Node.js release.
+
 The npm package has not been published yet. Until the first npm release, build from a reviewed source checkout:
 
 ```sh

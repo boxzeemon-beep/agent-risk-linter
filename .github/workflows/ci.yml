@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ["20", "22", "24"]
+        node: ["22", "24", "26"]
     steps:
       - name: Check out source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -22,6 +22,7 @@ jobs:
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: ${{ matrix.node }}
+          check-latest: true
           cache: npm
       - run: npm ci
       - run: npm test

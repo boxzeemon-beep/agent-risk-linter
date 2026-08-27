@@ -31,5 +31,5 @@ outputs:
   high-count:
     description: Number of high findings.
 runs:
-  using: node20
+  using: node24
   main: dist/src/action.js
