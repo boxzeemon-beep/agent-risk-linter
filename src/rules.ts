@@ -549,6 +549,18 @@ export const RULES: readonly Rule[] = [
   ),
   patternRule(
     {
+      id: "HOOK001",
+      title: "Codex lifecycle hook executes a command",
+      description: "A command hook can run automatically during the Codex lifecycle, including after an interrupted turn, with the session working directory and hook context available to the process.",
+      remediation: "Review the exact event, matcher, command, Windows override, environment, timeout, and async behavior. Use a maintained script at an explicit trusted path, keep its privileges narrow, and do not bypass Codex hook trust review.",
+      severity: "medium",
+      category: "command-execution",
+      appliesTo: ["config", "manifest"],
+    },
+    [/"type"\s*:\s*"command"/gi, /^\s*type\s*=\s*["']command["']\s*(?:#.*)?$/gim],
+  ),
+  patternRule(
+    {
       id: "MCP003",
       title: "Codex lifecycle hook invokes an MCP tool",
       description: "An MCP tool hook can run automatically during the Codex lifecycle and can template prompt or tool-event data into a tool call that may access files, networks, credentials, or code execution.",

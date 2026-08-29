@@ -43,6 +43,7 @@ The normal path ends at local output and performs no network request. The option
 - Binary, size, and file-count limits.
 - Common dependency/build directories excluded.
 - Secret redaction before every output channel and API payload.
+- Review-oriented detection for Codex lifecycle hooks that automatically execute commands.
 - Detection and output redaction for static credential-bearing MCP HTTP headers.
 - Review-oriented detection for WebMCP tools that expose application capabilities to agents in a live signed-in page session.
 - Structured semantic output with file allowlisting and line clamping.
