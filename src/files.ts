@@ -79,6 +79,7 @@ export function classifyFile(relativePath: string): FileKind {
   const lower = normalized.toLowerCase();
   const base = path.posix.basename(lower);
   const extension = path.posix.extname(lower);
+  const isRepoPluginMarketplace = /(?:^|\/)(?:\.agents\/plugins|\.claude-plugin)\/marketplace\.json$/.test(lower);
 
   if (
     base === "skill.md" ||
@@ -107,12 +108,13 @@ export function classifyFile(relativePath: string): FileKind {
     base === "setup.py" ||
     base.startsWith("requirements") ||
     base === "plugin.json" ||
-    base === "manifest.json"
+    base === "manifest.json" ||
+    isRepoPluginMarketplace
   ) {
     return "manifest";
   }
 
-  if (base.includes("mcp") || base === "openai.yaml" || extension === ".toml" || extension === ".ini" || extension === ".conf") {
+  if (base === "hooks.json" || base.includes("mcp") || base === "openai.yaml" || extension === ".toml" || extension === ".ini" || extension === ".conf") {
     return "config";
   }
 

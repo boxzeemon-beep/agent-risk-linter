@@ -8,10 +8,19 @@ import { prepareSemanticPayload, runSemanticReview } from "../src/semantic.js";
 const unsafeRoot = path.resolve("test", "fixtures", "unsafe-skill");
 
 test("redaction removes credential values and private keys", () => {
-  const input = 'api_key="not-a-real-but-sensitive-value"\nAuthorization: Bearer token-value-123456\n-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----';
+  const input = [
+    'api_key="not-a-real-but-sensitive-value"',
+    "Authorization: Bearer token-value-123456",
+    'http_headers = { Authorization = "Bearer mcp-auth-value-123456", Cookie = "session=mcp-cookie-value-123456" }',
+    'http_headers = { Authorization = "Bearer ${MCP_TOKEN}" }',
+    "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
+  ].join("\n");
   const redacted = redactText(input);
   assert.ok(!redacted.includes("not-a-real-but-sensitive-value"));
   assert.ok(!redacted.includes("token-value-123456"));
+  assert.ok(!redacted.includes("mcp-auth-value-123456"));
+  assert.ok(!redacted.includes("mcp-cookie-value-123456"));
+  assert.match(redacted, /Bearer \$\{MCP_TOKEN\}/);
   assert.ok(!redacted.includes("\nabc\n"));
   assert.match(redacted, /REDACTED/);
 });

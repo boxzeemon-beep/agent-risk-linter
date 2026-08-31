@@ -44,9 +44,9 @@ The default exit threshold is `high`. Use `--fail-on none` during initial review
 | Agent instructions | hierarchy overrides, concealment, approval or sandbox bypass, authority delegated to external content |
 | Shell and filesystem | remote-to-shell pipelines, dynamic evaluation, encoded execution, recursive deletion, privilege broadening |
 | Credentials and network | sensitive credential stores, environment enumeration, hardcoded secrets, credential-bearing requests, reverse shells |
-| Package supply chain | install lifecycle hooks and dependencies that bypass normal registry versioning |
+| Package and plugin supply chain | install lifecycle hooks, dependencies that bypass normal registry versioning, and mutable Git or npm sources in repository plugin marketplaces |
 | GitHub Actions | mutable action references, `write-all`, privileged PR events, checkout of contributor-controlled code |
-| MCP configuration | unencrypted remote endpoints and shell-wrapped server commands |
+| MCP, Codex hooks, and WebMCP | unencrypted remote endpoints, shell-wrapped server commands, static credential headers, lifecycle hooks that automatically execute commands or invoke MCP tools, and agent-callable site-tool registrations |
 | Skill metadata | missing `name` or `description` fields that make activation less predictable |
 
 List every rule or explain one rule:

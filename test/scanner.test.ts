@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -18,6 +18,237 @@ test("unsafe skill exposes agent, shell, filesystem, network, MCP, supply-chain,
   const ids = new Set(execution.result.findings.map((finding) => finding.ruleId));
   for (const expected of ["AGENT001", "AGENT002", "AGENT003", "SHELL001", "FS001", "CRED002", "NET001", "PRIV001", "MCP001", "MCP002", "SC001", "SC002", "SC003", "CI001", "CI002", "CI003"]) {
     assert.ok(ids.has(expected), `expected ${expected}; received ${[...ids].join(", ")}`);
+  }
+});
+
+test("Codex command and MCP tool hooks are flagged without executing configured handlers", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "agent-risk-linter-hooks-"));
+  try {
+    const codexDirectory = path.join(directory, ".codex");
+    await mkdir(codexDirectory);
+    await writeFile(
+      path.join(codexDirectory, "hooks.json"),
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: "Bash",
+              hooks: [
+                {
+                  type: "mcp_tool",
+                  server: "security",
+                  tool: "scan",
+                  input: { command: "${tool_input.command}" },
+                },
+              ],
+            },
+          ],
+          Interrupt: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command: "node .codex/hooks/reviewed-interrupt.js",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(codexDirectory, "config.toml"),
+      [
+        "[[hooks.PostToolUse.hooks]]",
+        "type = 'mcp_tool'",
+        "server = 'audit'",
+        "tool = 'record'",
+        "",
+        "[[hooks.Interrupt.hooks]]",
+        "type = 'command'",
+        "command = 'node .codex/hooks/reviewed-interrupt.js'",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const execution = await scanProject({ root: directory, useConfig: false });
+    const mcpFindings = execution.result.findings.filter((finding) => finding.ruleId === "MCP003");
+    assert.deepEqual(
+      mcpFindings.map((finding) => finding.file).sort(),
+      [".codex/config.toml", ".codex/hooks.json"],
+    );
+    const commandFindings = execution.result.findings.filter((finding) => finding.ruleId === "HOOK001");
+    assert.deepEqual(
+      commandFindings.map((finding) => finding.file).sort(),
+      [".codex/config.toml", ".codex/hooks.json"],
+    );
+    assert.equal(execution.files.find((file) => file.relativePath === ".codex/hooks.json")?.kind, "config");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("mutable repo plugin marketplace sources are flagged while immutable and unrelated catalogs are ignored", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "agent-risk-linter-plugin-marketplace-"));
+  try {
+    const agentMarketplaceDirectory = path.join(directory, ".agents", "plugins");
+    const legacyMarketplaceDirectory = path.join(directory, ".claude-plugin");
+    const documentationDirectory = path.join(directory, "docs");
+    await mkdir(agentMarketplaceDirectory, { recursive: true });
+    await mkdir(legacyMarketplaceDirectory, { recursive: true });
+    await mkdir(documentationDirectory, { recursive: true });
+
+    await writeFile(
+      path.join(agentMarketplaceDirectory, "marketplace.json"),
+      JSON.stringify({
+        name: "repo-plugins",
+        plugins: [
+          {
+            name: "mutable-git",
+            source: { source: "git-subdir", url: "https://example.invalid/plugins.git", path: "./plugins/mutable-git", ref: "main" },
+          },
+          {
+            name: "pinned-git",
+            source: { source: "url", url: "https://example.invalid/pinned.git", sha: "a".repeat(40) },
+          },
+          {
+            name: "mutable-npm",
+            source: { source: "npm", package: "@example/mutable-plugin", version: "^1.2.0" },
+          },
+          {
+            name: "pinned-npm",
+            source: { source: "npm", package: "@example/pinned-plugin", version: "1.2.3" },
+          },
+          { name: "local-plugin", source: { source: "local", path: "./plugins/local-plugin" } },
+        ],
+      }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(legacyMarketplaceDirectory, "marketplace.json"),
+      JSON.stringify({
+        name: "legacy-plugins",
+        plugins: [{ name: "legacy-mutable", source: { source: "url", url: "https://example.invalid/legacy.git", ref: "release" } }],
+      }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(documentationDirectory, "marketplace.json"),
+      JSON.stringify({
+        plugins: [{ name: "documentation-example", source: { source: "git-subdir", url: "https://example.invalid/docs.git", ref: "main" } }],
+      }),
+      "utf8",
+    );
+
+    const execution = await scanProject({ root: directory, useConfig: false });
+    const findings = execution.result.findings.filter((finding) => finding.ruleId === "SC004");
+    assert.equal(findings.length, 3, findings.map((finding) => `${finding.file}:${finding.description}`).join("\n"));
+    assert.deepEqual(
+      findings.map((finding) => finding.file).sort(),
+      [".agents/plugins/marketplace.json", ".agents/plugins/marketplace.json", ".claude-plugin/marketplace.json"],
+    );
+    assert.match(findings.map((finding) => finding.description).join("\n"), /mutable-git/);
+    assert.match(findings.map((finding) => finding.description).join("\n"), /mutable-npm/);
+    assert.match(findings.map((finding) => finding.description).join("\n"), /legacy-mutable/);
+    assert.equal(execution.files.find((file) => file.relativePath === ".agents/plugins/marketplace.json")?.kind, "manifest");
+    assert.equal(execution.files.find((file) => file.relativePath === ".claude-plugin/marketplace.json")?.kind, "manifest");
+    assert.equal(execution.files.find((file) => file.relativePath === "docs/marketplace.json")?.kind, "document");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("static MCP credential headers are flagged and redacted without flagging environment-backed headers", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "agent-risk-linter-mcp-headers-"));
+  const authorizationSecret = "unit-test-authorization-value-123456";
+  const cookieSecret = "unit-test-cookie-value-123456";
+  const proxySecret = "dXNlcjpwYXNzd29yZA==";
+  const dottedSecret = "unit-test-dotted-token-123456";
+  try {
+    const codexDirectory = path.join(directory, ".codex");
+    await mkdir(codexDirectory);
+    await writeFile(
+      path.join(codexDirectory, "config.toml"),
+      [
+        "[mcp_servers.private]",
+        'url = "https://mcp.example.invalid/mcp"',
+        `http_headers = { Authorization = "Bearer ${authorizationSecret}", "X-Region" = "us-east-1" }`,
+        'env_http_headers = { Authorization = "MCP_AUTH_TOKEN" }',
+        "",
+        "[mcp_servers.cookie.http_headers]",
+        `Cookie = "session=${cookieSecret}"`,
+        "",
+        "[mcp_servers.placeholder]",
+        'http_headers = { Authorization = "Bearer ${MCP_TOKEN}" }',
+        "",
+        "[mcp_servers.dotted]",
+        `http_headers."X-Auth-Token" = "${dottedSecret}"`,
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(
+      path.join(directory, "mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          private: {
+            url: "https://mcp.example.invalid/mcp",
+            http_headers: { "Proxy-Authorization": `Basic ${proxySecret}`, "X-Region": "us-east-1" },
+            env_http_headers: { Authorization: "MCP_PROXY_TOKEN" },
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const execution = await scanProject({ root: directory, useConfig: false });
+    const findings = execution.result.findings.filter((finding) => finding.ruleId === "MCP004");
+    assert.equal(findings.length, 4, findings.map((finding) => `${finding.file}:${finding.line}:${finding.description}`).join("\n"));
+    assert.deepEqual(
+      findings.map((finding) => finding.file).sort(),
+      [".codex/config.toml", ".codex/config.toml", ".codex/config.toml", "mcp.json"],
+    );
+    assert.match(findings.map((finding) => finding.description).join("\n"), /Authorization/);
+    assert.match(findings.map((finding) => finding.description).join("\n"), /Cookie/);
+    assert.match(findings.map((finding) => finding.description).join("\n"), /Proxy-Authorization/);
+    assert.match(findings.map((finding) => finding.description).join("\n"), /X-Auth-Token/);
+    for (const secret of [authorizationSecret, cookieSecret, proxySecret, dottedSecret]) {
+      assert.ok(!JSON.stringify(execution.result).includes(secret));
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("WebMCP site-tool registrations are flagged without executing handlers or flagging documentation", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "agent-risk-linter-webmcp-"));
+  const modelContext = "model" + "Context";
+  const registerTool = "register" + "Tool";
+  const registration = [
+    `await document.${modelContext}.${registerTool}({`,
+    '  name: "delete_draft",',
+    '  description: "Delete a draft",',
+    '  inputSchema: { type: "object", properties: {}, additionalProperties: false },',
+    "  annotations: { readOnlyHint: true },",
+    '  execute: async () => { throw new Error("handler must not run during a scan"); },',
+    "});",
+    `document.${modelContext}?.${registerTool}({`,
+    '  name: "read_title",',
+    '  inputSchema: { type: "object", properties: {}, additionalProperties: false },',
+    "  execute: async () => ({ title: document.title }),",
+    "});",
+  ].join("\n");
+  try {
+    await writeFile(path.join(directory, "site-tools.ts"), registration, "utf8");
+    await writeFile(path.join(directory, "site-tools.md"), `Documentation example only:\n\n${registration}`, "utf8");
+
+    const execution = await scanProject({ root: directory, useConfig: false });
+    const findings = execution.result.findings.filter((finding) => finding.ruleId === "WEB001");
+    assert.equal(findings.length, 2);
+    assert.ok(findings.every((finding) => finding.file === "site-tools.ts"));
+    assert.equal(execution.files.find((file) => file.relativePath === "site-tools.ts")?.kind, "script");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
 

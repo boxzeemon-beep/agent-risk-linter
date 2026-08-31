@@ -60,6 +60,7 @@ export function classifyFile(relativePath) {
     const lower = normalized.toLowerCase();
     const base = path.posix.basename(lower);
     const extension = path.posix.extname(lower);
+    const isRepoPluginMarketplace = /(?:^|\/)(?:\.agents\/plugins|\.claude-plugin)\/marketplace\.json$/.test(lower);
     if (base === "skill.md" ||
         base === "agents.md" ||
         base === "claude.md" ||
@@ -82,10 +83,11 @@ export function classifyFile(relativePath) {
         base === "setup.py" ||
         base.startsWith("requirements") ||
         base === "plugin.json" ||
-        base === "manifest.json") {
+        base === "manifest.json" ||
+        isRepoPluginMarketplace) {
         return "manifest";
     }
-    if (base.includes("mcp") || base === "openai.yaml" || extension === ".toml" || extension === ".ini" || extension === ".conf") {
+    if (base === "hooks.json" || base.includes("mcp") || base === "openai.yaml" || extension === ".toml" || extension === ".ini" || extension === ".conf") {
         return "config";
     }
     if (SCRIPT_EXTENSIONS.has(extension) || SPECIAL_TEXT_NAMES.has(base))

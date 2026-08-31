@@ -1,6 +1,8 @@
 import path from "node:path";
 const ALL_TEXT_KINDS = ["instruction", "script", "manifest", "workflow", "config", "document"];
 const EXECUTABLE_KINDS = ["instruction", "script", "workflow", "config", "document"];
+const CREDENTIAL_PLACEHOLDERS = /(?:example|placeholder|redacted|changeme|dummy|sample|your[_-]|x{4,}|\$\{|\{\{|process\.env|<[^>]*(?:token|secret|key)[^>]*>)/i;
+const SENSITIVE_HTTP_HEADERS = new Set(["authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key", "api-key", "x-auth-token"]);
 function cloneGlobal(pattern) {
     const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
     return new RegExp(pattern.source, flags);
@@ -37,6 +39,110 @@ function parsePackageJson(context) {
 function findKey(content, key) {
     const quoted = content.indexOf(`"${key}"`);
     return quoted >= 0 ? quoted : 0;
+}
+function isCredentialPlaceholder(value) {
+    const normalized = value.trim();
+    return !normalized || CREDENTIAL_PLACEHOLDERS.test(normalized) || /^(?:Bearer\s+)?(?:token|secret|password)$/i.test(normalized);
+}
+function findClosingBrace(content, openIndex) {
+    let depth = 0;
+    let quote;
+    let escaped = false;
+    for (let index = openIndex; index < content.length; index += 1) {
+        const character = content[index];
+        if (quote) {
+            if (escaped) {
+                escaped = false;
+            }
+            else if (character === "\\" && quote === '"') {
+                escaped = true;
+            }
+            else if (character === quote) {
+                quote = undefined;
+            }
+            continue;
+        }
+        if (character === '"' || character === "'") {
+            quote = character;
+        }
+        else if (character === "{") {
+            depth += 1;
+        }
+        else if (character === "}") {
+            depth -= 1;
+            if (depth === 0)
+                return index;
+        }
+    }
+    return undefined;
+}
+function sensitiveHeaderAssignments(content, offset = 0) {
+    const matches = [];
+    const assignment = /(?:^|[,\r\n])\s*["']?([A-Za-z0-9_-]+)["']?\s*[:=]\s*(["'])([^\r\n]*?)\2/gim;
+    let match;
+    while ((match = assignment.exec(content)) !== null) {
+        const header = match[1] ?? "";
+        const value = match[3] ?? "";
+        if (!SENSITIVE_HTTP_HEADERS.has(header.toLowerCase()) || isCredentialPlaceholder(value))
+            continue;
+        const headerOffset = match[0].indexOf(header);
+        matches.push({ index: offset + match.index + Math.max(headerOffset, 0), length: header.length, message: `Static credential header: ${header}` });
+    }
+    return matches;
+}
+function mcpStaticCredentialHeaderRule() {
+    return {
+        id: "MCP004",
+        title: "MCP HTTP credential is stored in a static header",
+        description: "A reusable credential in MCP http_headers can leak through repository history or reports, and a client that follows a cross-origin redirect could disclose it to another server.",
+        remediation: "Revoke any committed value. Prefer OAuth, bearer_token_env_var, or env_http_headers, and use an MCP client that restricts redirects to the configured origin.",
+        severity: "high",
+        category: "mcp-security",
+        appliesTo: ["config", "manifest"],
+        detect({ file }) {
+            const matches = [];
+            const inlineMap = /(?:^|[,{]\s*)["']?http_headers["']?\s*[:=]\s*\{/gim;
+            let mapMatch;
+            while ((mapMatch = inlineMap.exec(file.content)) !== null) {
+                const openIndex = mapMatch.index + mapMatch[0].lastIndexOf("{");
+                const closeIndex = findClosingBrace(file.content, openIndex);
+                if (closeIndex === undefined)
+                    break;
+                matches.push(...sensitiveHeaderAssignments(file.content.slice(openIndex + 1, closeIndex), openIndex + 1));
+                inlineMap.lastIndex = closeIndex + 1;
+            }
+            const tablePattern = /^\s*\[([^\]\r\n]+)\]\s*(?:#.*)?$/gim;
+            const tables = [];
+            let tableMatch;
+            while ((tableMatch = tablePattern.exec(file.content)) !== null) {
+                tables.push({ name: (tableMatch[1] ?? "").trim().toLowerCase(), start: tableMatch.index, contentStart: tablePattern.lastIndex });
+            }
+            for (let index = 0; index < tables.length; index += 1) {
+                const table = tables[index];
+                if (!table || !/(?:^|\.)http_headers$/.test(table.name))
+                    continue;
+                const end = tables[index + 1]?.start ?? file.content.length;
+                matches.push(...sensitiveHeaderAssignments(file.content.slice(table.contentStart, end), table.contentStart));
+            }
+            const dottedHeader = /^\s*["']?http_headers["']?\.["']?([A-Za-z0-9_-]+)["']?\s*=\s*(["'])([^\r\n]*?)\2/gim;
+            let dottedMatch;
+            while ((dottedMatch = dottedHeader.exec(file.content)) !== null) {
+                const header = dottedMatch[1] ?? "";
+                const value = dottedMatch[3] ?? "";
+                if (!SENSITIVE_HTTP_HEADERS.has(header.toLowerCase()) || isCredentialPlaceholder(value))
+                    continue;
+                const headerOffset = dottedMatch[0].indexOf(header);
+                matches.push({ index: dottedMatch.index + Math.max(headerOffset, 0), length: header.length, message: `Static credential header: ${header}` });
+            }
+            const seen = new Set();
+            return matches.filter((match) => {
+                if (seen.has(match.index))
+                    return false;
+                seen.add(match.index);
+                return true;
+            });
+        },
+    };
 }
 function packageInstallHookRule() {
     return {
@@ -108,6 +214,70 @@ function unpinnedActionRule() {
                 if (action.startsWith("./") || action.startsWith("docker://") || /^[a-f0-9]{40}$/i.test(reference))
                     continue;
                 matches.push({ index: match.index, length: match[0].length, message: `${action}@${reference}` });
+            }
+            return matches;
+        },
+    };
+}
+function mutablePluginMarketplaceSourceRule() {
+    const fullGitCommit = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i;
+    const exactNpmVersion = /^=?v?(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+    return {
+        id: "SC004",
+        title: "Repository plugin source is not immutable",
+        description: "A repository marketplace can install agent plugins containing skills, MCP servers, and lifecycle hooks. A mutable Git selector or npm range can resolve to different plugin code after review.",
+        remediation: "Pin Git-backed plugins to a reviewed full commit SHA and npm plugins to an exact version. Review the plugin manifest and bundled skills, MCP configuration, and hooks before enabling it.",
+        severity: "medium",
+        category: "supply-chain",
+        appliesTo: ["manifest"],
+        detect({ file }) {
+            const normalized = file.relativePath.toLowerCase();
+            if (!/(?:^|\/)(?:\.agents\/plugins|\.claude-plugin)\/marketplace\.json$/.test(normalized))
+                return [];
+            let marketplace;
+            try {
+                marketplace = JSON.parse(file.content);
+            }
+            catch {
+                return [];
+            }
+            if (typeof marketplace !== "object" || marketplace === null || Array.isArray(marketplace))
+                return [];
+            const plugins = marketplace.plugins;
+            if (!Array.isArray(plugins))
+                return [];
+            const matches = [];
+            let searchFrom = Math.max(findKey(file.content, "plugins"), 0);
+            for (const plugin of plugins) {
+                if (typeof plugin !== "object" || plugin === null || Array.isArray(plugin))
+                    continue;
+                const entry = plugin;
+                const name = typeof entry.name === "string" && entry.name.trim() ? entry.name.trim() : "unnamed plugin";
+                const displayName = name.length > 80 ? `${name.slice(0, 77)}...` : name;
+                const encodedName = JSON.stringify(name);
+                const nameIndex = file.content.indexOf(encodedName, searchFrom);
+                const matchIndex = nameIndex >= 0 ? nameIndex : searchFrom;
+                if (nameIndex >= 0)
+                    searchFrom = nameIndex + encodedName.length;
+                const source = entry.source;
+                if (typeof source !== "object" || source === null || Array.isArray(source))
+                    continue;
+                const sourceRecord = source;
+                const sourceType = typeof sourceRecord.source === "string" ? sourceRecord.source.toLowerCase() : "";
+                if (sourceType === "url" || sourceType === "git-subdir") {
+                    const sha = typeof sourceRecord.sha === "string" ? sourceRecord.sha.trim() : "";
+                    const ref = typeof sourceRecord.ref === "string" ? sourceRecord.ref.trim() : "";
+                    if (!fullGitCommit.test(sha) && !fullGitCommit.test(ref)) {
+                        matches.push({ index: matchIndex, length: Math.max(encodedName.length, 1), message: `${displayName}: Git source is not pinned to a full commit SHA` });
+                    }
+                    continue;
+                }
+                if (sourceType === "npm") {
+                    const version = typeof sourceRecord.version === "string" ? sourceRecord.version.trim() : "";
+                    if (!exactNpmVersion.test(version)) {
+                        matches.push({ index: matchIndex, length: Math.max(encodedName.length, 1), message: `${displayName}: npm source is not pinned to an exact version` });
+                    }
+                }
             }
             return matches;
         },
@@ -342,6 +512,7 @@ export const RULES = [
     packageInstallHookRule(),
     remoteDependencyRule(),
     unpinnedActionRule(),
+    mutablePluginMarketplaceSourceRule(),
     patternRule({
         id: "CI001",
         title: "Workflow grants write-all permissions",
@@ -379,6 +550,34 @@ export const RULES = [
         category: "mcp-security",
         appliesTo: ["config"],
     }, [/"command"\s*:\s*"(?:sh|bash|zsh|cmd|powershell|pwsh)"[\s\S]{0,260}"(?:-c|\/c|Command)"/gi]),
+    patternRule({
+        id: "HOOK001",
+        title: "Codex lifecycle hook executes a command",
+        description: "A command hook can run automatically during the Codex lifecycle, including after an interrupted turn, with the session working directory and hook context available to the process.",
+        remediation: "Review the exact event, matcher, command, Windows override, environment, timeout, and async behavior. Use a maintained script at an explicit trusted path, keep its privileges narrow, and do not bypass Codex hook trust review.",
+        severity: "medium",
+        category: "command-execution",
+        appliesTo: ["config", "manifest"],
+    }, [/"type"\s*:\s*"command"/gi, /^\s*type\s*=\s*["']command["']\s*(?:#.*)?$/gim]),
+    patternRule({
+        id: "MCP003",
+        title: "Codex lifecycle hook invokes an MCP tool",
+        description: "An MCP tool hook can run automatically during the Codex lifecycle and can template prompt or tool-event data into a tool call that may access files, networks, credentials, or code execution.",
+        remediation: "Review the exact event, matcher, server, tool, and input template. Remove unnecessary hooks, restrict MCP permissions and credentials, and avoid forwarding sensitive or untrusted event fields.",
+        severity: "medium",
+        category: "mcp-security",
+        appliesTo: ["config", "manifest"],
+    }, [/"type"\s*:\s*"mcp_tool"/gi, /^\s*type\s*=\s*["']mcp_tool["']\s*(?:#.*)?$/gim]),
+    mcpStaticCredentialHeaderRule(),
+    patternRule({
+        id: "WEB001",
+        title: "Website registers an agent-callable WebMCP tool",
+        description: "WebMCP exposes page capabilities to agents in the live signed-in session. Tool names, annotations, and results are untrusted and do not prove that a handler is read-only.",
+        remediation: "Review the handler and called application logic. Keep input schemas narrow, describe side effects accurately, enforce existing authentication, authorization, and input validation, and return only data needed to verify the action.",
+        severity: "medium",
+        category: "webmcp-security",
+        appliesTo: ["script"],
+    }, [/\bdocument\s*\.\s*modelContext\s*(?:\?\.\s*|\.\s*)registerTool\s*\(/gi]),
     skillMetadataRule(),
 ];
 export function getRule(ruleId) {
