@@ -89,6 +89,76 @@ test("Codex command and MCP tool hooks are flagged without executing configured 
   }
 });
 
+test("mutable repo plugin marketplace sources are flagged while immutable and unrelated catalogs are ignored", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "agent-risk-linter-plugin-marketplace-"));
+  try {
+    const agentMarketplaceDirectory = path.join(directory, ".agents", "plugins");
+    const legacyMarketplaceDirectory = path.join(directory, ".claude-plugin");
+    const documentationDirectory = path.join(directory, "docs");
+    await mkdir(agentMarketplaceDirectory, { recursive: true });
+    await mkdir(legacyMarketplaceDirectory, { recursive: true });
+    await mkdir(documentationDirectory, { recursive: true });
+
+    await writeFile(
+      path.join(agentMarketplaceDirectory, "marketplace.json"),
+      JSON.stringify({
+        name: "repo-plugins",
+        plugins: [
+          {
+            name: "mutable-git",
+            source: { source: "git-subdir", url: "https://example.invalid/plugins.git", path: "./plugins/mutable-git", ref: "main" },
+          },
+          {
+            name: "pinned-git",
+            source: { source: "url", url: "https://example.invalid/pinned.git", sha: "a".repeat(40) },
+          },
+          {
+            name: "mutable-npm",
+            source: { source: "npm", package: "@example/mutable-plugin", version: "^1.2.0" },
+          },
+          {
+            name: "pinned-npm",
+            source: { source: "npm", package: "@example/pinned-plugin", version: "1.2.3" },
+          },
+          { name: "local-plugin", source: { source: "local", path: "./plugins/local-plugin" } },
+        ],
+      }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(legacyMarketplaceDirectory, "marketplace.json"),
+      JSON.stringify({
+        name: "legacy-plugins",
+        plugins: [{ name: "legacy-mutable", source: { source: "url", url: "https://example.invalid/legacy.git", ref: "release" } }],
+      }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(documentationDirectory, "marketplace.json"),
+      JSON.stringify({
+        plugins: [{ name: "documentation-example", source: { source: "git-subdir", url: "https://example.invalid/docs.git", ref: "main" } }],
+      }),
+      "utf8",
+    );
+
+    const execution = await scanProject({ root: directory, useConfig: false });
+    const findings = execution.result.findings.filter((finding) => finding.ruleId === "SC004");
+    assert.equal(findings.length, 3, findings.map((finding) => `${finding.file}:${finding.description}`).join("\n"));
+    assert.deepEqual(
+      findings.map((finding) => finding.file).sort(),
+      [".agents/plugins/marketplace.json", ".agents/plugins/marketplace.json", ".claude-plugin/marketplace.json"],
+    );
+    assert.match(findings.map((finding) => finding.description).join("\n"), /mutable-git/);
+    assert.match(findings.map((finding) => finding.description).join("\n"), /mutable-npm/);
+    assert.match(findings.map((finding) => finding.description).join("\n"), /legacy-mutable/);
+    assert.equal(execution.files.find((file) => file.relativePath === ".agents/plugins/marketplace.json")?.kind, "manifest");
+    assert.equal(execution.files.find((file) => file.relativePath === ".claude-plugin/marketplace.json")?.kind, "manifest");
+    assert.equal(execution.files.find((file) => file.relativePath === "docs/marketplace.json")?.kind, "document");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("static MCP credential headers are flagged and redacted without flagging environment-backed headers", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "agent-risk-linter-mcp-headers-"));
   const authorizationSecret = "unit-test-authorization-value-123456";

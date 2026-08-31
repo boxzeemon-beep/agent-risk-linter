@@ -221,6 +221,72 @@ function unpinnedActionRule(): Rule {
   };
 }
 
+function mutablePluginMarketplaceSourceRule(): Rule {
+  const fullGitCommit = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i;
+  const exactNpmVersion = /^=?v?(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+
+  return {
+    id: "SC004",
+    title: "Repository plugin source is not immutable",
+    description:
+      "A repository marketplace can install agent plugins containing skills, MCP servers, and lifecycle hooks. A mutable Git selector or npm range can resolve to different plugin code after review.",
+    remediation:
+      "Pin Git-backed plugins to a reviewed full commit SHA and npm plugins to an exact version. Review the plugin manifest and bundled skills, MCP configuration, and hooks before enabling it.",
+    severity: "medium",
+    category: "supply-chain",
+    appliesTo: ["manifest"],
+    detect({ file }): RuleMatch[] {
+      const normalized = file.relativePath.toLowerCase();
+      if (!/(?:^|\/)(?:\.agents\/plugins|\.claude-plugin)\/marketplace\.json$/.test(normalized)) return [];
+
+      let marketplace: unknown;
+      try {
+        marketplace = JSON.parse(file.content);
+      } catch {
+        return [];
+      }
+      if (typeof marketplace !== "object" || marketplace === null || Array.isArray(marketplace)) return [];
+      const plugins = (marketplace as Record<string, unknown>).plugins;
+      if (!Array.isArray(plugins)) return [];
+
+      const matches: RuleMatch[] = [];
+      let searchFrom = Math.max(findKey(file.content, "plugins"), 0);
+      for (const plugin of plugins) {
+        if (typeof plugin !== "object" || plugin === null || Array.isArray(plugin)) continue;
+        const entry = plugin as Record<string, unknown>;
+        const name = typeof entry.name === "string" && entry.name.trim() ? entry.name.trim() : "unnamed plugin";
+        const displayName = name.length > 80 ? `${name.slice(0, 77)}...` : name;
+        const encodedName = JSON.stringify(name);
+        const nameIndex = file.content.indexOf(encodedName, searchFrom);
+        const matchIndex = nameIndex >= 0 ? nameIndex : searchFrom;
+        if (nameIndex >= 0) searchFrom = nameIndex + encodedName.length;
+
+        const source = entry.source;
+        if (typeof source !== "object" || source === null || Array.isArray(source)) continue;
+        const sourceRecord = source as Record<string, unknown>;
+        const sourceType = typeof sourceRecord.source === "string" ? sourceRecord.source.toLowerCase() : "";
+
+        if (sourceType === "url" || sourceType === "git-subdir") {
+          const sha = typeof sourceRecord.sha === "string" ? sourceRecord.sha.trim() : "";
+          const ref = typeof sourceRecord.ref === "string" ? sourceRecord.ref.trim() : "";
+          if (!fullGitCommit.test(sha) && !fullGitCommit.test(ref)) {
+            matches.push({ index: matchIndex, length: Math.max(encodedName.length, 1), message: `${displayName}: Git source is not pinned to a full commit SHA` });
+          }
+          continue;
+        }
+
+        if (sourceType === "npm") {
+          const version = typeof sourceRecord.version === "string" ? sourceRecord.version.trim() : "";
+          if (!exactNpmVersion.test(version)) {
+            matches.push({ index: matchIndex, length: Math.max(encodedName.length, 1), message: `${displayName}: npm source is not pinned to an exact version` });
+          }
+        }
+      }
+      return matches;
+    },
+  };
+}
+
 function hardcodedCredentialRule(): Rule {
   const assignment = /\b(api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)["']?\s*[:=]\s*["']?([^"'\s,;#]{12,})["']?/gim;
   const placeholders = /(?:example|placeholder|redacted|changeme|dummy|sample|your[_-]|x{4,}|\$\{|process\.env)/i;
@@ -498,6 +564,7 @@ export const RULES: readonly Rule[] = [
   packageInstallHookRule(),
   remoteDependencyRule(),
   unpinnedActionRule(),
+  mutablePluginMarketplaceSourceRule(),
   patternRule(
     {
       id: "CI001",
